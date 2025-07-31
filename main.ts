@@ -1,134 +1,172 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Plugin, Platform, setIcon, normalizePath } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
+export default class TodoPlusPlugin extends Plugin {
+  async onload() {
+    console.log("Todo+ Clone Plugin loaded");
 
-interface MyPluginSettings {
-	mySetting: string;
-}
+    this.registerAutoHotkeys();
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+    this.addCommand({
+      id: 'todo-toggle-done',
+      name: 'Toggle Done (✔)',
+      hotkeys: [{ modifiers: ["Alt"], key: "d" }],
+      editorCallback: (editor: Editor) => {
+        this.toggleTaskStatus(editor, '✔', '@done');
+      }
+    });
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+    this.addCommand({
+      id: 'todo-toggle-cancelled',
+      name: 'Toggle Cancelled (✘)',
+      hotkeys: [{ modifiers: ["Alt"], key: "c" }],
+      editorCallback: (editor: Editor) => {
+        this.toggleTaskStatus(editor, '✘');
+      }
+    });
 
-	async onload() {
-		await this.loadSettings();
+    this.addCommand({
+      id: 'todo-toggle-started',
+      name: 'Toggle Started (@started)',
+      hotkeys: [{ modifiers: ["Alt"], key: "a" }],
+      editorCallback: (editor: Editor) => {
+        this.toggleStarted(editor);
+      }
+    });
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
+    this.addCommand({
+      id: 'todo-new-task',
+      name: 'New Task (☐)',
+      hotkeys: [{ modifiers: ["Mod"], key: "Enter" }],
+      editorCallback: (editor: Editor) => {
+        const cursor = editor.getCursor();
+        const newLine = cursor.line + 1;
+        editor.replaceRange(`☐ `, { line: newLine, ch: 0 });
+        editor.setCursor({ line: newLine, ch: 2 });
+      }
+    });
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
+    this.addCommand({
+      id: 'todo-remove-line',
+      name: 'Remove Task Line',
+      hotkeys: [{ modifiers: ["Alt"], key: "r" }],
+      editorCallback: (editor: Editor) => {
+        const cursor = editor.getCursor();
+        editor.replaceRange('', { line: cursor.line, ch: 0 }, { line: cursor.line + 1, ch: 0 });
+      }
+    });
+  }
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+  registerAutoHotkeys() {
+    const commandsToBind = [
+      { id: 'todo-toggle-done', hotkeys: [{ modifiers: ["Alt"], key: "d" }] },
+      { id: 'todo-toggle-cancelled', hotkeys: [{ modifiers: ["Alt"], key: "c" }] },
+      { id: 'todo-toggle-started', hotkeys: [{ modifiers: ["Alt"], key: "a" }] },
+      { id: 'todo-new-task', hotkeys: [{ modifiers: ["Mod"], key: "Enter" }] },
+      { id: 'todo-remove-line', hotkeys: [{ modifiers: ["Alt"], key: "r" }] },
+    ];
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
+    setTimeout(() => {
+      const hotkeyManager = (this.app as any).hotkeyManager;
+      if (!hotkeyManager) return;
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+      commandsToBind.forEach(({ id, hotkeys }) => {
+        const existing = hotkeyManager.customKeys?.[id];
+        if (!existing || existing.length === 0) {
+          hotkeyManager.setHotkeys(id, hotkeys);
+        }
+      });
+    }, 1000);
+  }
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
+  onunload() {
+    console.log("Todo+ Clone Plugin unloaded");
+  }
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-	}
+  toggleTaskStatus(editor: Editor, mark: string, tag?: string) {
+    const cursor = editor.getCursor();
+    let line = editor.getLine(cursor.line);
+    if (!line.trim().startsWith('☐') && !line.trim().startsWith('✔') && !line.trim().startsWith('✘')) return;
 
-	onunload() {
+    const timePartMatch = line.match(/(@[a-z]+\([^)]*\))/g) || [];
+    let contentPart = line.replace(/^(☐|✔|✘)\s*/, '').replace(/(@[a-z]+\([^)]*\)|\s)+$/g, '').trim();
+    contentPart = contentPart.replace(/^~~|~~$/g, '').replace(/^_|_$/g, '');
 
-	}
+    if (line.includes(mark)) {
+      line = line.replace(mark, '☐');
+      if (tag) line = line.replace(new RegExp(`\s*${tag}\\([^)]*\\)`, 'g'), '');
+      if (tag === '@done') line = line.replace(/\s*@lasted\([^)]*\)/g, '');
+      line = `☐ ${contentPart} ${this.removeTagText(line)}`.replace(/\s{2,}/g, ' ').trimEnd();
+    } else {
+      if (mark === '✔') {
+        const now = this.getCurrentTimestamp();
+        const startedMatch = line.match(/@started\((.*?)\)/);
+        let timeTags = ` @done(${now})`;
+        if (startedMatch) {
+          const started = new Date(startedMatch[1]);
+          const done = new Date();
+          const duration = this.formatDuration(done.getTime() - started.getTime());
+          timeTags = ` @started(${startedMatch[1]}) @done(${now}) @lasted(${duration})`;
+          line = line.replace(/\s*@started\([^)]*\)/, '');
+        }
+        line = this.cleanTimeTags(line);
+        line = `${mark} ~~${contentPart}~~ ${timeTags}`.replace(/\s{2,}/g, ' ').trimEnd();
+      } else if (mark === '✘') {
+        line = this.cleanTimeTags(line);
+        line = `${mark} _${contentPart}_ ${timePartMatch.join(' ')}`.replace(/\s{2,}/g, ' ').trimEnd();
+      }
+    }
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
+    editor.setLine(cursor.line, line.trimEnd());
+  }
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
+  toggleStarted(editor: Editor) {
+    const cursor = editor.getCursor();
+    let line = editor.getLine(cursor.line);
+    if (!line.trim().startsWith('☐')) return;
+    if (line.includes('@done') || line.includes('✘')) return;
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+    const startedRegex = /@started\([^)]*\)/;
+    if (startedRegex.test(line)) {
+      line = line.replace(startedRegex, '').replace(/\s{2,}/g, ' ').trimEnd();
+    } else {
+      const now = this.getCurrentTimestamp();
+      line = this.cleanTimeTags(line);
+      line += ` @started(${now})`;
+    }
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
+    editor.setLine(cursor.line, line.trimEnd());
+  }
 
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
+  cleanTimeTags(line: string): string {
+    return line
+      .replace(/\s*@done\([^)]*\)/g, '')
+      .replace(/\s*@lasted\([^)]*\)/g, '')
+      .replace(/\s*@started\([^)]*\)/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trimEnd();
+  }
 
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
+  removeTagText(line: string): string {
+    const tagText = line.match(/(@[a-z]+\([^)]*\))/g);
+    return tagText ? tagText.join(' ') : '';
+  }
 
-	constructor(app: App, plugin: MyPlugin) {
-		super(app, plugin);
-		this.plugin = plugin;
-	}
+  getCurrentTimestamp(): string {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const MM = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${MM}-${dd} ${hh}:${mm}`;
+  }
 
-	display(): void {
-		const {containerEl} = this;
-
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
-	}
+  formatDuration(ms: number): string {
+    const minutes = Math.floor(ms / 60000);
+    const hours = Math.floor(minutes / 60);
+    const remMinutes = minutes % 60;
+    const h = hours > 0 ? `${hours}h` : '';
+    const m = remMinutes > 0 ? `${remMinutes}m` : '';
+    return h + m || '0m';
+  }
 }
