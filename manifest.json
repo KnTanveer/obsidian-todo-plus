@@ -5,7 +5,7 @@
 	"minAppVersion": "0.15.0",
 	"description": "Manage todo/task lists with ease. Powerful, easy to use.",
 	"author": "Tanveer Khan",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://github.com/KnTanveer",
+	"authorUrl": "https://github.com/KnTanveer",
+	"fundingUrl": "https://github.com/sponsors/KnTanveer",
 	"isDesktopOnly": false
 }
