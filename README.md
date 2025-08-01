@@ -25,7 +25,7 @@
 - Press Alt+R to delete a Todo
 
 **Toggle status**
-You can also cycle through todo status checkbox/done/cancelled by pressing Alt+X
+- You can also cycle through todo status checkbox/done/cancelled by pressing Alt+X
 
 # For mobile
 - Add the commands to the editing toolbar for easy acces
